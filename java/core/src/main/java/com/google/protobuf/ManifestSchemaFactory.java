@@ -74,7 +74,7 @@ final class ManifestSchemaFactory implements SchemaFactory {
 
   private static <T> Schema<T> newSchema(Class<T> messageType, MessageInfo messageInfo) {
     if (GeneratedMessageLite.class.isAssignableFrom(messageType)) {
-      return isProto2(messageInfo)
+      return allowExtensions(messageInfo)
           ? MessageSchema.newSchema(
               messageType,
               messageInfo,
@@ -92,7 +92,7 @@ final class ManifestSchemaFactory implements SchemaFactory {
               /* extensionSchema= */ null,
               MapFieldSchemas.lite());
     }
-    return isProto2(messageInfo)
+    return allowExtensions(messageInfo)
         ? MessageSchema.newSchema(
             messageType,
             messageInfo,
@@ -111,8 +111,14 @@ final class ManifestSchemaFactory implements SchemaFactory {
             MapFieldSchemas.full());
   }
 
-  private static boolean isProto2(MessageInfo messageInfo) {
-    return messageInfo.getSyntax() == ProtoSyntax.PROTO2;
+  private static boolean allowExtensions(MessageInfo messageInfo) {
+    switch (messageInfo.getSyntax()) {
+      case PROTO3:
+        // TODO(b/279034699): Allow extensions for proto3 (go/edition-zero-features)
+        return false;
+      default:
+        return true;
+    }
   }
 
   private static MessageInfoFactory getDefaultMessageInfoFactory() {

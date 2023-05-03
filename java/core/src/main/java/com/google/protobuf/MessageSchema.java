@@ -154,7 +154,7 @@ final class MessageSchema<T> implements Schema<T> {
   private final MessageLite defaultInstance;
   private final boolean hasExtensions;
   private final boolean lite;
-  private final boolean proto3;
+  private final ProtoSyntax syntax;
   // TODO(xiaofeng): Make both full-runtime and lite-runtime support cached field size.
   private final boolean useCachedSizeField;
 
@@ -185,7 +185,7 @@ final class MessageSchema<T> implements Schema<T> {
       int minFieldNumber,
       int maxFieldNumber,
       MessageLite defaultInstance,
-      boolean proto3,
+      ProtoSyntax syntax,
       boolean useCachedSizeField,
       int[] intArray,
       int checkInitialized,
@@ -201,7 +201,7 @@ final class MessageSchema<T> implements Schema<T> {
     this.maxFieldNumber = maxFieldNumber;
 
     this.lite = defaultInstance instanceof GeneratedMessageLite;
-    this.proto3 = proto3;
+    this.syntax = syntax;
     this.hasExtensions = extensionSchema != null && extensionSchema.hasExtensions(defaultInstance);
     this.useCachedSizeField = useCachedSizeField;
 
@@ -252,8 +252,6 @@ final class MessageSchema<T> implements Schema<T> {
       UnknownFieldSchema<?, ?> unknownFieldSchema,
       ExtensionSchema<?> extensionSchema,
       MapFieldSchema mapFieldSchema) {
-    final boolean isProto3 = messageInfo.getSyntax() == ProtoSyntax.PROTO3;
-
     String info = messageInfo.getStringInfo();
     final int length = info.length();
     int i = 0;
@@ -445,7 +443,7 @@ final class MessageSchema<T> implements Schema<T> {
       fieldTypeWithExtraBits = next;
       fieldType = fieldTypeWithExtraBits & 0xFF;
 
-      if ((fieldTypeWithExtraBits & 0x400) != 0) {
+      if ((fieldTypeWithExtraBits & 0x400) != 0 /* kCheckInitialized */) {
         intArray[checkInitializedPosition++] = bufferIndex;
       }
 
@@ -472,7 +470,7 @@ final class MessageSchema<T> implements Schema<T> {
             || oneofFieldType == 17 /* FieldType.GROUP */) {
           objects[bufferIndex / INTS_PER_FIELD * 2 + 1] = messageInfoObjects[objectsPosition++];
         } else if (oneofFieldType == 12 /* FieldType.ENUM */) {
-          if (!isProto3) {
+          if ((fieldTypeWithExtraBits & 0x800) != 0 /* kLegacyEnumIsClosedBit */) {
             objects[bufferIndex / INTS_PER_FIELD * 2 + 1] = messageInfoObjects[objectsPosition++];
           }
         }
@@ -515,19 +513,19 @@ final class MessageSchema<T> implements Schema<T> {
         } else if (fieldType == 12 /* FieldType.ENUM */
             || fieldType == 30 /* FieldType.ENUM_LIST */
             || fieldType == 44 /* FieldType.ENUM_LIST_PACKED */) {
-          if (!isProto3) {
+          if ((fieldTypeWithExtraBits & 0x800) != 0 /* kLegacyEnumIsClosedBit */) {
             objects[bufferIndex / INTS_PER_FIELD * 2 + 1] = messageInfoObjects[objectsPosition++];
           }
         } else if (fieldType == 50 /* FieldType.MAP */) {
           intArray[mapFieldIndex++] = bufferIndex;
           objects[bufferIndex / INTS_PER_FIELD * 2] = messageInfoObjects[objectsPosition++];
-          if ((fieldTypeWithExtraBits & 0x800) != 0) {
+          if ((fieldTypeWithExtraBits & 0x800) != 0 /* kLegacyEnumIsClosedBit */) {
             objects[bufferIndex / INTS_PER_FIELD * 2 + 1] = messageInfoObjects[objectsPosition++];
           }
         }
 
         fieldOffset = (int) unsafe.objectFieldOffset(field);
-        boolean hasHasBit = (fieldTypeWithExtraBits & 0x1000) == 0x1000;
+        boolean hasHasBit = (fieldTypeWithExtraBits & 0x1000 /* kHasHasBit */) == 0x1000;
         if (hasHasBit && fieldType <= 17 /* FieldType.GROUP */) {
           next = info.charAt(i++);
           if (next >= 0xD800) {
@@ -567,8 +565,8 @@ final class MessageSchema<T> implements Schema<T> {
 
       buffer[bufferIndex++] = fieldNumber;
       buffer[bufferIndex++] =
-          ((fieldTypeWithExtraBits & 0x200) != 0 ? ENFORCE_UTF8_MASK : 0)
-              | ((fieldTypeWithExtraBits & 0x100) != 0 ? REQUIRED_MASK : 0)
+          ((fieldTypeWithExtraBits & 0x200) != 0 /* kUtf8CheckBit */ ? ENFORCE_UTF8_MASK : 0)
+              | ((fieldTypeWithExtraBits & 0x100 /* kRequiredBit */) != 0 ? REQUIRED_MASK : 0)
               | (fieldType << OFFSET_BITS)
               | fieldOffset;
       buffer[bufferIndex++] = (presenceMaskShift << OFFSET_BITS) | presenceFieldOffset;
@@ -580,7 +578,7 @@ final class MessageSchema<T> implements Schema<T> {
         minFieldNumber,
         maxFieldNumber,
         messageInfo.getDefaultInstance(),
-        isProto3,
+        messageInfo.getSyntax(),
         /* useCachedSizeField= */ false,
         intArray,
         checkInitialized,
@@ -624,7 +622,6 @@ final class MessageSchema<T> implements Schema<T> {
       UnknownFieldSchema<?, ?> unknownFieldSchema,
       ExtensionSchema<?> extensionSchema,
       MapFieldSchema mapFieldSchema) {
-    final boolean isProto3 = messageInfo.getSyntax() == ProtoSyntax.PROTO3;
     FieldInfo[] fis = messageInfo.getFields();
     final int minFieldNumber;
     final int maxFieldNumber;
@@ -714,7 +711,7 @@ final class MessageSchema<T> implements Schema<T> {
         minFieldNumber,
         maxFieldNumber,
         messageInfo.getDefaultInstance(),
-        isProto3,
+        messageInfo.getSyntax(),
         /* useCachedSizeField= */ true,
         combined,
         checkInitialized.length,
@@ -1458,7 +1455,15 @@ final class MessageSchema<T> implements Schema<T> {
 
   @Override
   public int getSerializedSize(T message) {
-    return proto3 ? getSerializedSizeProto3(message) : getSerializedSizeProto2(message);
+    switch (syntax) {
+      case PROTO2:
+        return getSerializedSizeProto2(message);
+      case PROTO3:
+        return getSerializedSizeProto3(message);
+      default:
+        // TODO(b/279034699): case EDITIONS
+        throw new IllegalArgumentException("Unsupported syntax: " + syntax);
+    }
   }
 
   @SuppressWarnings("unchecked")
@@ -2580,10 +2585,16 @@ final class MessageSchema<T> implements Schema<T> {
     if (writer.fieldOrder() == Writer.FieldOrder.DESCENDING) {
       writeFieldsInDescendingOrder(message, writer);
     } else {
-      if (proto3) {
-        writeFieldsInAscendingOrderProto3(message, writer);
-      } else {
-        writeFieldsInAscendingOrderProto2(message, writer);
+      switch (syntax) {
+        case PROTO3:
+          writeFieldsInAscendingOrderProto3(message, writer);
+          break;
+        case PROTO2:
+          writeFieldsInAscendingOrderProto2(message, writer);
+          break;
+        default:
+          // TODO(b/279034699): case EDITIONS
+          throw new IllegalArgumentException("Unsupported syntax: " + syntax);
       }
     }
   }
@@ -5477,10 +5488,16 @@ final class MessageSchema<T> implements Schema<T> {
   @Override
   public void mergeFrom(T message, byte[] data, int position, int limit, Registers registers)
       throws IOException {
-    if (proto3) {
-      parseProto3Message(message, data, position, limit, registers);
-    } else {
-      parseProto2Message(message, data, position, limit, 0, registers);
+    switch (syntax) {
+      case PROTO3:
+        parseProto3Message(message, data, position, limit, registers);
+        break;
+      case PROTO2:
+        parseProto2Message(message, data, position, limit, 0, registers);
+        break;
+      default:
+        // TODO(b/279034699): case EDITIONS
+        throw new IllegalArgumentException("Unsupported syntax: " + syntax);
     }
   }
 

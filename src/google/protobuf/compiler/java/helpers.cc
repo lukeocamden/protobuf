@@ -920,10 +920,11 @@ int GetExperimentalJavaFieldTypeForPacked(const FieldDescriptor* field) {
 int GetExperimentalJavaFieldType(const FieldDescriptor* field) {
   static const int kMapFieldType = 50;
   static const int kOneofFieldTypeOffset = 51;
+
   static const int kRequiredBit = 0x100;
   static const int kUtf8CheckBit = 0x200;
   static const int kCheckInitialized = 0x400;
-  static const int kMapWithProto2EnumValue = 0x800;
+  static const int kLegacyEnumIsClosedBit = 0x800;
   static const int kHasHasBit = 0x1000;
   int extra_bits = field->is_required() ? kRequiredBit : 0;
   if (field->type() == FieldDescriptor::TYPE_STRING && CheckUtf8(field)) {
@@ -941,7 +942,7 @@ int GetExperimentalJavaFieldType(const FieldDescriptor* field) {
     if (!SupportUnknownEnumValue(MapValueField(field))) {
       const FieldDescriptor* value = field->message_type()->map_value();
       if (GetJavaType(value) == JAVATYPE_ENUM) {
-        extra_bits |= kMapWithProto2EnumValue;
+        extra_bits |= kLegacyEnumIsClosedBit;
       }
     }
     return kMapFieldType | extra_bits;

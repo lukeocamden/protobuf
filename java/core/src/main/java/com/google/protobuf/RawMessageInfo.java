@@ -60,7 +60,8 @@ final class RawMessageInfo implements MessageInfo {
    * <p>The integer sequence encoded in the String object has the following layout:
    *
    * <ul>
-   *   <li>[0]: flags, flags & 0x1 = is proto2?, flags & 0x2 = is message?.
+   *   <li>[0]: flags, flags & 0x1 = is proto2?, flags & 0x2 = is message?, flags & 0x4 = is
+   *       edition?
    *   <li>[1]: field count, if 0, this is the end of the integer sequence and the corresponding
    *       Object[] array should be null.
    *   <li>[2]: oneof count
@@ -212,7 +213,11 @@ final class RawMessageInfo implements MessageInfo {
 
   @Override
   public ProtoSyntax getSyntax() {
-    return (flags & 0x1) == 0x1 ? ProtoSyntax.PROTO2 : ProtoSyntax.PROTO3;
+    if ((flags & 0x1) == 0x1) {
+      return ProtoSyntax.PROTO2;
+    } else {
+      return ProtoSyntax.PROTO3;
+    }
   }
 
   @Override

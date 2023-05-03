@@ -129,6 +129,7 @@ final class DescriptorMessageInfoFactory implements MessageInfoFactory {
       case PROTO3:
         return convertProto3(messageType, messageDescriptor);
       default:
+        // TODO(b/279034699): case EDITIONS
         throw new IllegalArgumentException(
             "Unsupported syntax: " + messageDescriptor.getFile().getSyntax());
     }

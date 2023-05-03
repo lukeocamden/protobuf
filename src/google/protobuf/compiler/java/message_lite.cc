@@ -515,6 +515,7 @@ void ImmutableMessageLiteGenerator::GenerateDynamicMethodNewBuildMessageInfo(
   if (descriptor_->options().message_set_wire_format()) {
     flags |= 0x2;
   }
+
   WriteIntToUtf16CharSequence(flags, &chars);
   WriteIntToUtf16CharSequence(descriptor_->field_count(), &chars);
 
