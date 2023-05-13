@@ -108,6 +108,14 @@ const char kDebugStringSilentMarkerForDetection[] = "\t ";
 // Controls insertion of kDebugStringSilentMarker into DebugString() output.
 PROTOBUF_EXPORT std::atomic<bool> enable_debug_text_format_marker;
 
+// Controls reporting sensitive fields that are serialized into a human-readable
+// format.
+PROTOBUF_EXPORT std::atomic<bool> enable_debug_text_detection;
+
+// Controls insertion of a marker making debug strings non-parseable, and
+// redacting annotated fields.
+PROTOBUF_EXPORT std::atomic<bool> enable_debug_text_redaction;
+
 int64_t GetRedactedFieldCount() {
   return num_redacted_field.load(std::memory_order_relaxed);
 }
@@ -176,9 +184,11 @@ PROTOBUF_EXPORT void PerformAbslStringify(
   // TODO(b/249835002): consider using the single line version for short
   TextFormat::Printer printer;
   printer.SetExpandAny(true);
-  printer.SetRedactDebugString(true);
+  printer.SetRedactDebugString(
+      internal::enable_debug_text_redaction.load(std::memory_order_relaxed));
   printer.SetRandomizeDebugString(true);
-  printer.SetRootMessageFullName(message.GetDescriptor()->full_name());
+  printer.SetReportSensitiveFields(
+      internal::enable_debug_text_detection.load(std::memory_order_relaxed));
   std::string result;
   printer.PrintToString(message, &result);
   append(result);
@@ -2068,12 +2078,12 @@ TextFormat::Printer::Printer()
       insert_silent_marker_(false),
       redact_debug_string_(false),
       randomize_debug_string_(false),
+      report_sensitive_fields_(false),
       hide_unknown_fields_(false),
       print_message_fields_in_index_order_(false),
       expand_any_(false),
       truncate_string_field_longer_than_(0LL),
-      finder_(nullptr),
-      root_message_full_name_("") {
+      finder_(nullptr) {
   SetUseUtf8StringEscaping(false);
 }
 
@@ -2832,6 +2842,16 @@ void TextFormat::Printer::PrintUnknownFields(
   }
 }
 
+namespace {
+
+// Check if the field is sensitive and should be redacted.
+bool ShouldRedactField(const FieldDescriptor* field) {
+  if (field->options().debug_redact()) return true;
+  return false;
+}
+
+}  // namespace
+
 bool TextFormat::Printer::TryRedactFieldValue(
     const Message& message, const FieldDescriptor* field,
     BaseTextGenerator* generator, bool insert_value_separator) const {
@@ -2850,9 +2870,7 @@ bool TextFormat::Printer::TryRedactFieldValue(
     }
   };
 
-  if (redact_debug_string_ && field->options().debug_redact()) {
-    do_redact("[REDACTED]");
-    return true;
+  if (ShouldRedactField(field)) {
   }
   return false;
 }
