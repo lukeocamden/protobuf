@@ -362,42 +362,8 @@ static PyObject* GetExtensionsByName(CMessageClass *self, void *closure) {
   return result.release();
 }
 
-// The _extensions_by_number dictionary is built on every access.
-// TODO(amauryfa): Migrate all users to pool.FindExtensionByNumber()
-static PyObject* GetExtensionsByNumber(CMessageClass *self, void *closure) {
-  if (self->message_descriptor == nullptr) {
-    // This is the base Message object, simply raise AttributeError.
-    PyErr_SetString(PyExc_AttributeError,
-                    "Base Message class has no DESCRIPTOR");
-    return nullptr;
-  }
-
-  const PyDescriptorPool* pool = self->py_message_factory->pool;
-
-  std::vector<const FieldDescriptor*> extensions;
-  pool->pool->FindAllExtensions(self->message_descriptor, &extensions);
-
-  ScopedPyObjectPtr result(PyDict_New());
-  for (int i = 0; i < extensions.size(); i++) {
-    ScopedPyObjectPtr extension(
-        PyFieldDescriptor_FromDescriptor(extensions[i]));
-    if (extension == nullptr) {
-      return nullptr;
-    }
-    ScopedPyObjectPtr number(PyLong_FromLong(extensions[i]->number()));
-    if (number == nullptr) {
-      return nullptr;
-    }
-    if (PyDict_SetItem(result.get(), number.get(), extension.get()) < 0) {
-      return nullptr;
-    }
-  }
-  return result.release();
-}
-
 static PyGetSetDef Getters[] = {
     {"_extensions_by_name", (getter)GetExtensionsByName, nullptr},
-    {"_extensions_by_number", (getter)GetExtensionsByNumber, nullptr},
     {nullptr},
 };
 
@@ -2446,15 +2412,9 @@ static PyObject* GetExtensionsByName(CMessage *self, void *closure) {
       reinterpret_cast<CMessageClass*>(Py_TYPE(self)), closure);
 }
 
-static PyObject* GetExtensionsByNumber(CMessage *self, void *closure) {
-  return message_meta::GetExtensionsByNumber(
-      reinterpret_cast<CMessageClass*>(Py_TYPE(self)), closure);
-}
-
 static PyGetSetDef Getters[] = {
     {"Extensions", (getter)GetExtensionDict, nullptr, "Extension dict"},
     {"_extensions_by_name", (getter)GetExtensionsByName, nullptr},
-    {"_extensions_by_number", (getter)GetExtensionsByNumber, nullptr},
     {nullptr},
 };
 
